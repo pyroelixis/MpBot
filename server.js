@@ -1,42 +1,64 @@
+// server.full.js — Express backend for MpBot (Render)
 const express = require('express');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());           // อนุญาตให้ extension เรียกข้ามโดเมน
-app.use(express.json());   // รองรับ JSON body
+app.use(cors());
+app.use(express.json());
 
-// ===== ค่าเริ่มต้นของโจทย์หมุน 3D =====
+// ===== 3D rotate challenge (used by controller.js) =====
 const DEFAULT_TARGET = { thetaDeg: 270, phiDeg: 90 };
 const DEFAULT_TOLERANCE = 10;
 
-// ===== Endpoint สำหรับ controller.js (โจทย์หมุน 3D) =====
 app.get('/api/challenge', (req, res) => {
   res.json({ target: DEFAULT_TARGET, tolerance: DEFAULT_TOLERANCE });
 });
 
-// ===== Health check =====
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
-// ====== LICENSING / UI STYLE "STUB" (แทนของเดิมบนเซิร์ฟเวอร์เก่า) ======
-// ให้ background.js ของคุณเรียกได้โดยไม่ล้ม และคง flow เดิม
-// 1) UI style เดิม (ใช้กับ getUIpopup(uid))
-app.get('/api/aloha/:uid', (req, res) => {
+// ===== Legacy/stub endpoints used by background.js & popup =====
+// Provide both /api/* and root paths for compatibility
+
+// UI style (getUIpopup)
+function alohaHandler(req, res) {
   const { uid } = req.params;
-  // คืนชื่อ style คงที่ (ปรับได้ตามที่ background.js ของคุณใช้)
   res.json({ ok: true, name: 'bundle' });
-});
+}
+app.get('/api/aloha/:uid', alohaHandler);
+app.get('/aloha/:uid', alohaHandler);
 
-// 2) ลงทะเบียน/ตรวจ key (สตับ) — ตอบ ok:true เสมอ
-app.post('/api/key', (req, res) => {
-  // ตัวอย่างรับ: { uid, key } ใน req.body — คุณจะตรวจจริง/บันทึก DB ทีหลังก็ได้
-  res.json({ ok: true, plan: 'pro', expiresAt: null });
-});
+// Check license
+function checkHandler(req, res) {
+  const { uid } = req.params;
+  res.json({ ok: true, uid, status: 'valid' });
+}
+app.get('/api/check/:uid', checkHandler);
+app.get('/check/:uid', checkHandler);
 
-// 3) เก็บสถิติ/เทเลเมตริก (สตับ) — ตอบ ok:true เสมอ
-app.post('/api/stat', (req, res) => {
-  // ตัวอย่างรับ: { uid, event, meta } — จะ log หรือเก็บ DB ภายหลังก็ได้
+// Transfer license (route name is '/tranfer' per background.js)
+function transferHandler(req, res) {
+  const { fromUid } = req.params;
+  const toUid = req.query.tranferTo || req.query.transferTo || null;
+  res.json({ ok: true, fromUid, toUid });
+}
+app.get('/api/tranfer/:fromUid', transferHandler);
+app.get('/tranfer/:fromUid', transferHandler);
+
+// Report key (no-op stub)
+function keyHandler(req, res) {
+  const { uid, key } = (req.body || {});
+  res.json({ ok: true, plan: 'pro', uid: uid || null, key: key || null, expiresAt: null });
+}
+app.post('/api/key', keyHandler);
+app.post('/key', keyHandler);
+
+// Report stats (no-op stub)
+function statHandler(req, res) {
+  const { uid, status, event, meta } = (req.body || {});
   res.json({ ok: true });
-});
+}
+app.post('/api/stat', statHandler);
+app.post('/stat', statHandler);
 
 // ===== Start server =====
 const PORT = process.env.PORT || 3000;
