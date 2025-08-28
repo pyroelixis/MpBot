@@ -27,8 +27,7 @@ app.get('/api/challenge', (req, res) => {
   });
 });
 
-// controller.js รายงานมุมที่ “ผ่านจริง” (ใช้บันทึก observation)
-// หมายเหตุ: จะเฉลี่ย target อัตโนมัติหรือไม่ ขึ้นกับ ENV OBS_RECOMPUTE
+// controller.js รายงานมุมที่ “ผ่านจริง”
 app.post('/api/observe', (req, res) => {
   const { key, thetaDeg, phiDeg } = req.body || {};
   if (typeof key !== 'string' || typeof thetaDeg !== 'number' || typeof phiDeg !== 'number') {
@@ -38,7 +37,7 @@ app.post('/api/observe', (req, res) => {
 
   let target = null;
   if (OBS_RECOMPUTE) {
-    target = db.recomputeTarget(key); // เฉลี่ยจาก observations ตาม logic ใน db.js เดิม
+    target = db.recomputeTarget(key);
   }
 
   res.json({ ok:true, target });
@@ -47,36 +46,67 @@ app.post('/api/observe', (req, res) => {
 // ping ใช้เช็คว่าเซิร์ฟเวอร์ทำงาน
 app.get('/api/health', (_, res) => res.json({ ok:true }));
 
-// ===== LEGACY STUB (คงไว้เพื่อเข้ากันได้กับโค้ดเดิมของ aubot) =====
+// ===== LEGACY STUB (aloha/stat คงไว้) =====
 function alohaHandler(_req, res){ res.json({ ok:true, name:'bundle' }); }
 app.get('/api/aloha/:uid', alohaHandler);
 app.get('/aloha/:uid', alohaHandler);
 
-function checkHandler(req,res){ res.json({ ok:true, uid:req.params.uid, status:'valid' }); }
-app.get('/api/check/:uid', checkHandler);
-app.get('/check/:uid', checkHandler);
-
-// ระวังสะกดตามเดิม: /tranfer
-function transferHandler(req,res){
-  res.json({
-    ok:true,
-    fromUid:req.params.fromUid,
-    toUid:req.query.tranferTo || req.query.transferTo || null
-  });
-}
-app.get('/api/tranfer/:fromUid', transferHandler);
-app.get('/tranfer/:fromUid', transferHandler);
-
-function keyHandler(req,res){
-  const { uid, key } = req.body || {};
-  res.json({ ok:true, plan:'pro', uid:uid||null, key:key||null, expiresAt:null });
-}
-app.post('/api/key', keyHandler);
-app.post('/key', keyHandler);
-
 function statHandler(_req,res){ res.json({ ok:true }); }
 app.post('/api/stat', statHandler);
 app.post('/stat', statHandler);
+
+// ===== LICENSE API (แทน stub เดิม) =====
+
+// POST /api/key  → ผูก license key กับ uid
+app.post('/api/key', (req, res) => {
+  const { uid, key } = req.body || {};
+  if (typeof key !== 'string' || !key.trim()){
+    return res.status(400).json({ ok:false, error:'key required' });
+  }
+  let lic = db.getLicenseByKey(key);
+  if (!lic) {
+    // auto-create (หรือจะ return error ถ้าอยากให้ admin เพิ่มเองเท่านั้น)
+    lic = db.upsertLicense({ key, plan:'pro', expires_at:null, max_devices:1, active:1 });
+  }
+  if (uid && uid.trim()){
+    const row = db.setLicenseTargetUid(key, uid.trim());
+    return res.json({ ok:true, plan: row.plan, uid: row.uid, key: row.key, expiresAt: row.expires_at || null });
+  }
+  return res.json({ ok:true, row: lic });
+});
+
+// GET /api/check/:uid  → ตรวจสถานะ license ของ uid
+app.get('/api/check/:uid', (req, res) => {
+  const uid = (req.params.uid || '').trim();
+  if (!uid) return res.status(400).json({ ok:false, error:'uid required' });
+  const st = db.checkLicense(uid);
+  return res.json(st);
+});
+app.get('/check/:uid', (req,res)=>{ // mirror path เดิม
+  const uid = (req.params.uid || '').trim();
+  const st = db.checkLicense(uid);
+  return res.json(st);
+});
+
+// GET /api/tranfer/:fromUid?tranferTo=newUid&key=LICENSE_KEY
+app.get('/api/tranfer/:fromUid', (req, res) => {
+  const fromUid = (req.params.fromUid || '').trim();
+  const toUid   = (req.query.tranferTo || req.query.transferTo || '').trim();
+  const key     = (req.query.key || '').trim();
+  if (!key || !toUid) return res.status(400).json({ ok:false, error:'key & tranferTo required' });
+
+  const row = db.transferLicense(key, fromUid || null, toUid);
+  if (row === 'bound-to-other') return res.status(403).json({ ok:false, error:'license bound to another uid' });
+  if (!row) return res.status(404).json({ ok:false, error:'license not found' });
+  return res.json({ ok:true, key: row.key, fromUid, toUid, plan: row.plan });
+});
+app.get('/tranfer/:fromUid', (req,res)=>{
+  const fromUid = (req.params.fromUid || '').trim();
+  const toUid   = (req.query.tranferTo || req.query.transferTo || '').trim();
+  const key     = (req.query.key || '').trim();
+  const row = db.transferLicense(key, fromUid || null, toUid);
+  return res.json({ ok:true, row });
+});
 
 // ===== ADMIN API =====
 function requireAdmin(req, res, next){
@@ -85,25 +115,19 @@ function requireAdmin(req, res, next){
   return res.status(401).json({ ok:false, error:'unauthorized' });
 }
 
-// รายการ target ทั้งหมด (รวม tolerance ปัจจุบัน)
+// challenges admin
 app.get('/api/admin/challenges', requireAdmin, (_req, res) => {
   res.json({ ok:true, rows: db.listChallenges() });
 });
-
-// ดูเป้าของ key เดียว
 app.get('/api/admin/challenges/:key', requireAdmin, (req, res) => {
   const row = db.getChallenge(req.params.key + '');
   if (!row) return res.status(404).json({ ok:false, error:'not found' });
   res.json({ ok:true, row });
 });
-
-// ดึง observations ล่าสุดของ key
 app.get('/api/admin/observations/:key', requireAdmin, (req, res) => {
   const limit = Math.min(Number(req.query.limit ?? 200), 1000);
   res.json({ ok:true, rows: db.listObservations(req.params.key + '', limit) });
 });
-
-// ตั้งค่า target manual ต่อ key
 app.post('/api/admin/set-target', requireAdmin, (req, res) => {
   const { key, thetaDeg, phiDeg, tolerance } = req.body || {};
   if (typeof key !== 'string') {
@@ -117,17 +141,27 @@ app.post('/api/admin/set-target', requireAdmin, (req, res) => {
   );
   res.json({ ok:true, target: tgt });
 });
-
-// ลบ key ทั้งชุด (target + observations)
 app.delete('/api/admin/keys/:key', requireAdmin, (req, res) => {
   res.json({ ok:true, deleted: db.deleteKey(req.params.key + '') });
 });
-
-// ตัด observations เก่า เหลือแค่ล่าสุด n รายการ แล้วคำนวณ target ใหม่
 app.post('/api/admin/compact/:key', requireAdmin, (req, res) => {
   const keep = Math.min(Number(req.body?.keep ?? 200), 2000);
   const tgt = db.compactKey(req.params.key + '', keep);
   res.json({ ok:true, kept: keep, target: tgt });
+});
+
+// license admin
+app.get('/api/admin/licenses', requireAdmin, (_req,res)=>{
+  res.json({ ok:true, rows: db.listLicenses() });
+});
+app.get('/api/admin/licenses/:key/history', requireAdmin, (req,res)=>{
+  res.json({ ok:true, rows: db.listLicenseHistory(req.params.key, Number(req.query.limit||100)) });
+});
+app.post('/api/admin/licenses', requireAdmin, (req,res)=>{
+  const { key, plan='pro', expires_at=null, max_devices=1, active=1 } = req.body || {};
+  if (!key) return res.status(400).json({ ok:false, error:'key required' });
+  const row = db.upsertLicense({ key, plan, expires_at, max_devices, active });
+  res.json({ ok:true, row });
 });
 
 // ===== Admin UI (static) =====
