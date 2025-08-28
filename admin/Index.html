@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MpBot Admin</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:20px;background:#0b0b12;color:#eaeaf1}
+  input,button{padding:8px;border-radius:8px;border:1px solid #3a3a5c;background:#16162a;color:#eaeaf1}
+  button{cursor:pointer}
+  .card{border:1px solid #2a2a44;border-radius:12px;padding:12px;margin:12px 0;background:#141427}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  pre{white-space:pre-wrap;background:#0e0e18;border:1px solid #2a2a44;border-radius:8px;padding:8px}
+  label{opacity:.8}
+</style>
+</head>
+<body>
+<h2>MpBot Admin</h2>
+
+<div class="card">
+  <div class="row">
+    <label>Admin Token:</label>
+    <input id="token" placeholder="X-Admin-Token"/>
+    <button onclick="loadChallenges()">Load Challenges</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row">
+    <input id="key" placeholder="key (challenge_type / filename)"/>
+    <button onclick="viewKey()">View</button>
+    <button onclick="loadObs()">Observations</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="theta" type="number" placeholder="thetaDeg"/>
+    <input id="phi" type="number" placeholder="phiDeg" value="90"/>
+    <input id="tol" type="number" placeholder="tolerance" value="10"/>
+    <button onclick="setTarget()">Set Target</button>
+    <button onclick="compact()">Compact</button>
+    <button onclick="delKey()" style="background:#8b1e1e">Delete Key</button>
+  </div>
+</div>
+
+<div class="card">
+  <h4>Result</h4>
+  <pre id="out"></pre>
+</div>
+
+<script>
+const API = location.origin;
+
+function hdrs(){
+  const t = document.getElementById('token').value.trim();
+  const h = { 'Content-Type': 'application/json' };
+  if (t) h['X-Admin-Token'] = t;
+  return h;
+}
+function show(obj){ document.getElementById('out').textContent = JSON.stringify(obj,null,2); }
+
+async function loadChallenges(){
+  const r = await fetch(`${API}/api/admin/challenges`, { headers: hdrs() });
+  show(await r.json());
+}
+async function viewKey(){
+  const key = document.getElementById('key').value.trim();
+  const r = await fetch(`${API}/api/admin/challenges/${encodeURIComponent(key)}`, { headers: hdrs() });
+  show(await r.json());
+}
+async function loadObs(){
+  const key = document.getElementById('key').value.trim();
+  const r = await fetch(`${API}/api/admin/observations/${encodeURIComponent(key)}?limit=200`, { headers: hdrs() });
+  show(await r.json());
+}
+async function setTarget(){
+  const key = document.getElementById('key').value.trim();
+  const theta = Number(document.getElementById('theta').value);
+  const phi = Number(document.getElementById('phi').value);
+  const tol = Number(document.getElementById('tol').value);
+  const r = await fetch(`${API}/api/admin/set-target`, {
+    method:'POST', headers: hdrs(),
+    body: JSON.stringify({ key, thetaDeg: theta, phiDeg: phi, tolerance: tol })
+  });
+  show(await r.json());
+}
+async function compact(){
+  const key = document.getElementById('key').value.trim();
+  const r = await fetch(`${API}/api/admin/compact/${encodeURIComponent(key)}`, {
+    method:'POST', headers: hdrs(),
+    body: JSON.stringify({ keep: 200 })
+  });
+  show(await r.json());
+}
+async function delKey(){
+  const key = document.getElementById('key').value.trim();
+  if(!confirm(`Delete all data for "${key}" ?`)) return;
+  const r = await fetch(`${API}/api/admin/keys/${encodeURIComponent(key)}`, {
+    method:'DELETE', headers: hdrs()
+  });
+  show(await r.json());
+}
+</script>
+</body>
+</html>
