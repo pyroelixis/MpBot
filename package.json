@@ -2,12 +2,13 @@
   "name": "mpbot",
   "version": "1.0.0",
   "main": "server.js",
+  "private": true,
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "better-sqlite3": "^9.4.3",
     "cors": "^2.8.5",
-    "better-sqlite3": "^9.4.3"
+    "express": "^4.19.2"
   }
 }
