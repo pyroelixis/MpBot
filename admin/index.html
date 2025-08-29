@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MpBot Admin</title>
+<style>
+  :root{
+    --bg:#0b0b12; --card:#141427; --line:#2a2a44; --text:#eaeaf1; --muted:#9fb3c8;
+    --input:#16162a; --btn:#5865f2; --btn-danger:#8b1e1e; --ok:#2e7d32;
+  }
+  *{box-sizing:border-box}
+  body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:20px;background:var(--bg);color:var(--text)}
+  h1,h2{margin:.2rem 0 .8rem}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;background:var(--card)}
+  input,button{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--input);color:var(--text)}
+  input{min-width:220px}
+  button{cursor:pointer;background:var(--btn);border-color:var(--btn)}
+  button.secondary{background:transparent}
+  button.danger{background:var(--btn-danger);border-color:var(--btn-danger)}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;font-size:14px;vertical-align:top}
+  pre{white-space:pre-wrap;background:#0e0e18;border:1px solid var(--line);border-radius:8px;padding:8px}
+  .muted{color:var(--muted);font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+  .ok{color:#d0ffd5}
+</style>
+</head>
+<body>
+<h1>MpBot Admin</h1>
+<div class="muted">จัดการ Target / Observations และ License (bind, expire, transfer) ที่นี่</div>
+
+<div class="card">
+  <div class="row">
+    <label for="token">Admin Token:</label>
+    <input id="token" placeholder="X-Admin-Token (ถ้าตั้ง ADMIN_TOKEN ไว้)" />
+    <button class="secondary" id="btnSaveTok">Save token</button>
+    <button id="btnLoadChallenges">Load Challenges</button>
+    <button id="btnLoadLicenses">Load Licenses</button>
+  </div>
+  <div class="muted" id="msg"></div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Target Editor</h2>
+    <div class="row">
+      <input id="key" placeholder="key (challenge_type / filename)"/>
+      <button class="secondary" id="btnPrefill">Prefill</button>
+      <button class="secondary" id="btnView">View</button>
+      <button class="secondary" id="btnObs">Observations</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="theta" type="number" placeholder="thetaDeg" />
+      <input id="phi" type="number" placeholder="phiDeg" value="90"/>
+      <input id="tol" type="number" placeholder="tolerance" value="10"/>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnSet">Set Target</button>
+      <button id="btnCompact" class="secondary">Compact (keep 200)</button>
+      <button id="btnDelete" class="danger">Delete Key</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Result</h2>
+    <pre id="out">Ready.</pre>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="row"><h2 style="margin-right:auto">Challenges</h2>
+      <button class="secondary" id="btnReloadChallenges">Reload</button>
+    </div>
+    <table id="tblChallenges">
+      <thead><tr><th>Key</th><th>θ</th><th>φ</th><th>Tol</th><th>Updated</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="row"><h2 style="margin-right:auto">Observations (latest)</h2>
+      <button class="secondary" id="btnReloadObs">Reload</button></div>
+    <table id="tblObs">
+      <thead><tr><th>#</th><th>θ</th><th>φ</th><th>ts</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>License Admin</h2>
+  <div class="row">
+    <input id="lic_key" placeholder="license key">
+    <input id="lic_plan" placeholder="plan (pro/basic)" value="pro">
+    <input id="lic_exp" placeholder="expiresAt (ISO or empty)">
+    <input id="lic_max" placeholder="max_devices" value="1" type="number" min="1">
+    <label><input id="lic_active" type="checkbox" checked> active</label>
+    <button id="btnUpsertLic">Upsert</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="bind_uid" placeholder="bind to UID">
+    <button id="btnBind">Bind</button>
+    <input id="check_uid" placeholder="check UID">
+    <button id="btnCheckUID">Check</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="from_uid" placeholder="from UID (optional)">
+    <input id="to_uid" placeholder="to UID">
+    <input id="xfer_key" placeholder="license key">
+    <button id="btnTransfer">Transfer</button>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="row"><h2 style="margin-right:auto">Licenses</h2>
+      <button class="secondary" id="btnReloadLic">Reload</button>
+    </div>
+    <table id="tblLicenses">
+      <thead><tr><th>Key</th><th>Plan</th><th>UID</th><th>Active</th><th>Expires</th><th>Updated</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="row"><h2 style="margin-right:auto">License History</h2>
+      <input id="hist_key" placeholder="license key">
+      <button class="secondary" id="btnLoadHist">Load</button>
+    </div>
+    <table id="tblLicHist">
+      <thead><tr><th>ts</th><th>action</th><th>uid</th><th>info</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+const el = id => document.getElementById(id);
+const out = obj => el('out').textContent = typeof obj==='string'?obj:JSON.stringify(obj,null,2);
+const info = msg => el('msg').textContent = msg || '';
+
+function headers(){
+  const t = el('token').value.trim();
+  const h = { 'Content-Type':'application/json' };
+  if (t) h['X-Admin-Token'] = t;
+  return h;
+}
+function saveToken(){ localStorage.setItem('mpbot_admin_token', el('token').value.trim()); info('saved'); }
+function loadToken(){ el('token').value = localStorage.getItem('mpbot_admin_token') || ''; }
+
+async function loadChallenges(){
+  const r = await fetch(`${API}/api/admin/challenges`, { headers: headers() });
+  const j = await r.json(); if (!j.ok) return out(j);
+  renderChallenges(j.rows||[]); out(j);
+}
+function renderChallenges(rows){
+  const tb = el('tblChallenges').querySelector('tbody'); tb.innerHTML='';
+  rows.forEach(row=>{
+    const tr=document.createElement('tr');
+    const ts=row.updated_at? new Date(row.updated_at).toLocaleString() : '';
+    tr.innerHTML = `<td>${row.key}</td><td>${row.thetaDeg}</td><td>${row.phiDeg}</td><td>${row.tolerance}</td><td>${ts}</td>`;
+    tr.style.cursor='pointer';
+    tr.onclick=()=>{ el('key').value=row.key; el('theta').value=row.thetaDeg; el('phi').value=row.phiDeg; el('tol').value=row.tolerance ?? 10; };
+    tb.appendChild(tr);
+  });
+}
+async function viewKey(){
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/challenges/${encodeURIComponent(key)}`,{headers:headers()})).json();
+  out(j);
+}
+async function prefill(){
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/challenges/${encodeURIComponent(key)}`,{headers:headers()})).json();
+  if(j.ok && j.row){ el('theta').value=j.row.thetaDeg??''; el('phi').value=j.row.phiDeg??''; el('tol').value=j.row.tolerance??10; }
+  out(j);
+}
+async function setTarget(){
+  const key=el('key').value.trim(); const theta=Number(el('theta').value); const phi=Number(el('phi').value); const tol=Number(el('tol').value);
+  if(!key||Number.isNaN(theta)||Number.isNaN(phi)) return out('key/theta/phi required');
+  const j=await (await fetch(`${API}/api/admin/set-target`,{method:'POST',headers:headers(),body:JSON.stringify({key,thetaDeg:theta,phiDeg:phi,tolerance:tol})})).json();
+  out(j); if(j.ok) loadChallenges();
+}
+async function compact(){
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/compact/${encodeURIComponent(key)}`,{method:'POST',headers:headers(),body:JSON.stringify({keep:200})})).json();
+  out(j);
+}
+async function delKey(){
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  if(!confirm(`Delete "${key}" ?`)) return;
+  const j=await (await fetch(`${API}/api/admin/keys/${encodeURIComponent(key)}`,{method:'DELETE',headers:headers()})).json();
+  out(j); if(j.ok) loadChallenges();
+}
+async function loadObs(){
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/observations/${encodeURIComponent(key)}?limit=200`,{headers:headers()})).json();
+  renderObs(j.rows||[]); out(j);
+}
+function renderObs(rows){
+  const tb=el('tblObs').querySelector('tbody'); tb.innerHTML='';
+  rows.forEach((r,i)=>{
+    const ts=r.ts? new Date(r.ts).toLocaleString(): '';
+    const tr=document.createElement('tr'); tr.innerHTML=`<td>${i+1}</td><td>${r.thetaDeg}</td><td>${r.phiDeg}</td><td>${ts}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+async function loadLicenses(){
+  const j=await (await fetch(`${API}/api/admin/licenses`,{headers:headers()})).json();
+  if(!j.ok) return out(j);
+  renderLicenses(j.rows||[]); out(j);
+}
+function renderLicenses(rows){
+  const tb=el('tblLicenses').querySelector('tbody'); tb.innerHTML='';
+  rows.forEach(r=>{
+    const ts=r.updated_at? new Date(r.updated_at).toLocaleString(): '';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.key}</td><td>${r.plan||''}</td><td>${r.uid||''}</td><td>${Number(r.active)?'YES':'NO'}</td><td>${r.expires_at||''}</td><td>${ts}</td>`;
+    tb.appendChild(tr);
+  });
+}
+async function upsertLic(){
+  const key=el('lic_key').value.trim(); if(!key) return out('license key required');
+  const plan=el('lic_plan').value.trim()||'pro';
+  const expiresAt=el('lic_exp').value.trim()||null;
+  const max=Number(el('lic_max').value||1);
+  const active=el('lic_active').checked?1:0;
+  const j=await (await fetch(`${API}/api/admin/licenses`,{method:'POST',headers:headers(),body:JSON.stringify({key,plan,expiresAt,max_devices:max,active})})).json();
+  out(j); if(j.ok) loadLicenses();
+}
+async function bindLic(){
+  const key=el('lic_key').value.trim(); const uid=el('bind_uid').value.trim();
+  if(!key||!uid) return out('key & uid required');
+  const j=await (await fetch(`${API}/api/key`,{method:'POST',headers:headers(),body:JSON.stringify({key,uid})})).json();
+  out(j); if(j.ok) loadLicenses();
+}
+async function checkUID(){
+  const uid=el('check_uid').value.trim(); if(!uid) return out('uid required');
+  const j=await (await fetch(`${API}/api/check/${encodeURIComponent(uid)}`,{headers:headers()})).json();
+  out(j);
+}
+async function transferLic(){
+  const key=el('xfer_key').value.trim(); const toUid=el('to_uid').value.trim(); const fromUid=el('from_uid').value.trim();
+  if(!key||!toUid) return out('key & toUid required');
+  const q = new URLSearchParams({ tranferTo: toUid, key }).toString();
+  const j=await (await fetch(`${API}/api/tranfer/${encodeURIComponent(fromUid||'') || '-' }?${q}`,{headers:headers()})).json();
+  out(j); if(j.ok) loadLicenses();
+}
+async function loadHist(){
+  const key=el('hist_key').value.trim(); if(!key) return out('license key required');
+  const j=await (await fetch(`${API}/api/admin/licenses/${encodeURIComponent(key)}/history?limit=200`,{headers:headers()})).json();
+  renderHist(j.rows||[]); out(j);
+}
+function renderHist(rows){
+  const tb=el('tblLicHist').querySelector('tbody'); tb.innerHTML='';
+  rows.forEach(h=>{
+    const ts=h.ts? new Date(h.ts).toLocaleString(): '';
+    const who=(h.from_uid||'') + (h.to_uid? (' → '+h.to_uid):'');
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${ts}</td><td>${h.action||''}</td><td>${who||''}</td><td>${h.key||''}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+el('btnSaveTok').onclick=saveToken; loadToken();
+el('btnLoadChallenges').onclick=loadChallenges;
+el('btnReloadChallenges').onclick=loadChallenges;
+el('btnView').onclick=viewKey; el('btnPrefill').onclick=prefill;
+el('btnSet').onclick=setTarget; el('btnCompact').onclick=compact; el('btnDelete').onclick=delKey;
+el('btnObs').onclick=loadObs; el('btnReloadObs').onclick=loadObs;
+
+el('btnLoadLicenses').onclick=loadLicenses; el('btnReloadLic').onclick=loadLicenses;
+el('btnUpsertLic').onclick=upsertLic; el('btnBind').onclick=bindLic;
+el('btnCheckUID').onclick=checkUID; el('btnTransfer').onclick=transferLic;
+el('btnLoadHist').onclick=loadHist;
+
+loadChallenges(); loadLicenses();
+</script>
+</body>
+</html>
