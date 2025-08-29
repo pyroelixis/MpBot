@@ -1,3 +1,4 @@
+// server.js — MpBot backend (Express) using db.js + Admin UI
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -37,7 +38,6 @@ app.post('/api/stat', statHandler);
 app.post('/stat', statHandler);
 
 /* ===== LICENSE API ===== */
-// Upsert license (+optionally bind to uid)
 app.post('/api/key', (req, res) => {
   const { uid, key, plan='pro', expiresAt=null, max_devices=1, active=1 } = req.body || {};
   if (!key) return res.status(400).json({ ok:false, error:'key required' });
@@ -49,23 +49,16 @@ app.post('/api/key', (req, res) => {
   const lic = db.getLicenseByKey(key);
   return res.json({ ok:true, key:lic.key, plan:lic.plan, uid:lic.uid||null, expiresAt: lic.expires_at, active: !!lic.active });
 });
-
-// Check license by UID
-// Auto-bind: if ?key=LICENSE_KEY and license not bound -> bind to this UID
 app.get('/api/check/:uid', (req, res) => {
   const uid = (req.params.uid || '').trim();
   if (!uid) return res.status(400).json({ ok:false, error:'uid required' });
   const key = (req.query.key || '').trim();
-  if (key) {
-    try { db.transferLicense(key, null, uid); } catch (_) { /* ignore */ }
-  }
+  if (key) { try { db.transferLicense(key, null, uid); } catch (_) {} }
   const st = db.checkLicense(uid);
   const resp = { ...st };
   if ('expires_at' in resp) { resp.expiresAt = resp.expires_at; delete resp.expires_at; }
   return res.json(resp);
 });
-
-// Transfer explicit
 app.get('/api/tranfer/:fromUid', (req, res) => {
   const fromUid = (req.params.fromUid || '').trim();
   const toUid   = (req.query.tranferTo || req.query.transferTo || '').trim();
