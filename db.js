@@ -1,217 +1,159 @@
-// db.js — data access layer for MpBot (challenges + licenses)
-const Database = require('better-sqlite3');
-const db = new Database('mpbot.db');
-db.pragma('journal_mode = WAL');
+const fs = require('fs');
+const path = require('path');
+const DB_FILE = path.join(__dirname, 'db.json');
 
-// ---------- TABLES ----------
+const DEFAULT_TARGET = { thetaDeg: 270, phiDeg: 90, tolerance: 10 };
 
-// challenges (เดิม)
-db.exec(`
-CREATE TABLE IF NOT EXISTS challenges (
-  key TEXT PRIMARY KEY,
-  theta REAL NOT NULL,
-  phi   REAL NOT NULL,
-  tolerance REAL NOT NULL DEFAULT 10,
-  n INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS observations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  key TEXT NOT NULL,
-  theta REAL NOT NULL,
-  phi REAL NOT NULL,
-  ts INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_obs_key_ts ON observations(key, ts DESC);
-`);
-
-// licenses (ใหม่)
-db.exec(`
-CREATE TABLE IF NOT EXISTS licenses (
-  key TEXT PRIMARY KEY,
-  plan TEXT NOT NULL DEFAULT 'pro',
-  uid TEXT,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000),
-  expires_at INTEGER,
-  max_devices INTEGER NOT NULL DEFAULT 1,
-  active INTEGER NOT NULL DEFAULT 1
-);
-CREATE TABLE IF NOT EXISTS license_history (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  key TEXT NOT NULL,
-  action TEXT NOT NULL,
-  from_uid TEXT,
-  to_uid TEXT,
-  ts INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000)
-);
-`);
-
-// ---------- UTILS ----------
-const toRad = d => d * Math.PI / 180;
-const toDeg = r => r * 180 / Math.PI;
-const clamp360 = x => { x %= 360; if (x < 0) x += 360; return x; };
-
-function degMean(values) {
-  let sx = 0, sy = 0;
-  for (const v of values) { sx += Math.cos(toRad(v)); sy += Math.sin(toRad(v)); }
-  let ang = toDeg(Math.atan2(sy, sx));
-  if (ang < 0) ang += 360;
-  return ang;
+function load() {
+  try {
+    const raw = fs.readFileSync(DB_FILE, 'utf8');
+    const j = JSON.parse(raw);
+    return Object.assign({ challenges:{}, observations:{}, licenses:{}, license_history:[] }, j);
+  } catch {
+    return { challenges:{}, observations:{}, licenses:{}, license_history:[] };
+  }
 }
+function save(db) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
+function now() { return Date.now(); }
 
-const DEFAULT_THETA = Number(process.env.TARGET_THETA ?? 0);
-const DEFAULT_PHI   = Number(process.env.TARGET_PHI   ?? 90);
-const DEFAULT_TOL   = Number(process.env.TOLERANCE    ?? 10);
+let DB = load();
 
-// ---------- DAO: CHALLENGE ----------
+/* ========== CHALLENGES / OBSERVATIONS ========== */
 function getTarget(key) {
-  const row = db.prepare('SELECT theta, phi, tolerance FROM challenges WHERE key=?').get(key);
+  const row = DB.challenges[key];
+  if (!row) return { ...DEFAULT_TARGET };
   return {
-    thetaDeg: clamp360(row?.theta ?? DEFAULT_THETA),
-    phiDeg:   row?.phi   ?? DEFAULT_PHI,
-    tolerance: row?.tolerance ?? DEFAULT_TOL
+    thetaDeg: typeof row.thetaDeg === 'number' ? row.thetaDeg : DEFAULT_TARGET.thetaDeg,
+    phiDeg:   typeof row.phiDeg   === 'number' ? row.phiDeg   : DEFAULT_TARGET.phiDeg,
+    tolerance:typeof row.tolerance=== 'number' ? row.tolerance: DEFAULT_TARGET.tolerance
   };
 }
-
+function setTarget(key, thetaDeg, phiDeg, tolerance = 10) {
+  DB.challenges[key] = {
+    thetaDeg: Number(thetaDeg), phiDeg: Number(phiDeg),
+    tolerance: Number(tolerance), updated_at: now()
+  };
+  save(DB);
+  return DB.challenges[key];
+}
 function saveObservation(key, thetaDeg, phiDeg) {
-  db.prepare('INSERT INTO observations(key, theta, phi, ts) VALUES(?,?,?,?)')
-    .run(key, clamp360(thetaDeg), phiDeg, Date.now());
+  if (!DB.observations[key]) DB.observations[key] = [];
+  DB.observations[key].push({ thetaDeg: Number(thetaDeg), phiDeg: Number(phiDeg), ts: now() });
+  const arr = DB.observations[key];
+  if (arr.length > 5000) DB.observations[key] = arr.slice(-5000);
+  save(DB);
 }
-
-function recomputeTarget(key, limit = 200) {
-  const rows = db.prepare(
-    'SELECT theta, phi FROM observations WHERE key=? ORDER BY ts DESC LIMIT ?'
-  ).all(key, limit);
-  if (!rows.length) return null;
-
-  const meanTheta = degMean(rows.map(r => r.theta));
-  const meanPhi = rows.map(r => r.phi).reduce((a,b)=>a+b,0) / rows.length;
-  const tol = DEFAULT_TOL;
-
-  db.prepare(`
-    INSERT INTO challenges(key, theta, phi, tolerance, n, updated_at)
-    VALUES(@key,@theta,@phi,@tol,@n,@ts)
-    ON CONFLICT(key) DO UPDATE SET
-      theta=excluded.theta, phi=excluded.phi,
-      tolerance=excluded.tolerance,
-      n=challenges.n+1, updated_at=excluded.updated_at
-  `).run({ key, theta: meanTheta, phi: meanPhi, tol, n: rows.length, ts: Date.now() });
-
-  return { thetaDeg: clamp360(meanTheta), phiDeg: meanPhi, tolerance: tol };
-}
-
-function listChallenges(limit = 500) {
-  return db.prepare(
-    'SELECT key, theta AS thetaDeg, phi AS phiDeg, tolerance, n, updated_at FROM challenges ORDER BY updated_at DESC LIMIT ?'
-  ).all(limit);
-}
-
-function getChallenge(key) {
-  return db.prepare(
-    'SELECT key, theta AS thetaDeg, phi AS phiDeg, tolerance, n, updated_at FROM challenges WHERE key=?'
-  ).get(key);
-}
-
 function listObservations(key, limit = 200) {
-  return db.prepare(
-    'SELECT id, theta AS thetaDeg, phi AS phiDeg, ts FROM observations WHERE key=? ORDER BY ts DESC LIMIT ?'
-  ).all(key, limit);
+  const arr = DB.observations[key] || [];
+  return arr.slice(-limit).reverse();
 }
-
-function setTarget(key, thetaDeg, phiDeg, tolerance) {
-  db.prepare(`
-    INSERT INTO challenges(key, theta, phi, tolerance, n, updated_at)
-    VALUES(?,?,?,?,0,?)
-    ON CONFLICT(key) DO UPDATE SET
-      theta=excluded.theta, phi=excluded.phi,
-      tolerance=excluded.tolerance, updated_at=excluded.updated_at
-  `).run(key, clamp360(thetaDeg), phiDeg, tolerance, Date.now());
-  return { thetaDeg: clamp360(thetaDeg), phiDeg, tolerance };
+function recomputeTarget(key, limit = 200) {
+  const arr = (DB.observations[key] || []).slice(-limit);
+  if (!arr.length) return getTarget(key);
+  const avg = arr.reduce((a, r) => {
+    a.theta += r.thetaDeg; a.phi += r.phiDeg; return a;
+  }, { theta:0, phi:0 });
+  const theta = avg.theta / arr.length;
+  const phi   = avg.phi   / arr.length;
+  return setTarget(key, theta, phi, getTarget(key).tolerance);
 }
-
+function listChallenges() {
+  return Object.entries(DB.challenges).map(([key, v]) => ({
+    key, thetaDeg:v.thetaDeg, phiDeg:v.phiDeg, tolerance:v.tolerance, updated_at:v.updated_at || null
+  }));
+}
+function getChallenge(key) {
+  const v = DB.challenges[key];
+  if (!v) return null;
+  return { key, thetaDeg:v.thetaDeg, phiDeg:v.phiDeg, tolerance:v.tolerance, updated_at:v.updated_at || null };
+}
 function deleteKey(key) {
-  const n1 = db.prepare('DELETE FROM observations WHERE key=?').run(key).changes;
-  const n2 = db.prepare('DELETE FROM challenges WHERE key=?').run(key).changes;
-  return { observations: n1, challenge: n2 };
+  let removed = false;
+  if (DB.challenges[key]) { delete DB.challenges[key]; removed = true; }
+  if (DB.observations[key]) { delete DB.observations[key]; removed = true; }
+  save(DB);
+  return removed;
 }
-
 function compactKey(key, keep = 200) {
-  const ids = db.prepare(
-    'SELECT id FROM observations WHERE key=? ORDER BY ts DESC LIMIT -1 OFFSET ?'
-  ).all(key, keep);
-  if (ids.length) {
-    const list = ids.map(r => r.id).join(',');
-    db.exec(`DELETE FROM observations WHERE id IN (${list})`);
-  }
-  return recomputeTarget(key);
+  if (!DB.observations[key]) return getTarget(key);
+  DB.observations[key] = DB.observations[key].slice(-keep);
+  save(DB);
+  return recomputeTarget(key, keep);
 }
 
-// ---------- DAO: LICENSE ----------
-function getLicenseByKey(key){ return db.prepare(`SELECT * FROM licenses WHERE key=?`).get(key); }
-function getLicenseByUid(uid){ return db.prepare(`SELECT * FROM licenses WHERE uid=? AND active=1`).get(uid); }
-function upsertLicense({key, plan='pro', expires_at=null, max_devices=1, active=1}){
-  db.prepare(`
-    INSERT INTO licenses (key, plan, expires_at, max_devices, active)
-    VALUES (@key, @plan, @expires_at, @max_devices, @active)
-    ON CONFLICT(key) DO UPDATE SET
-      plan=excluded.plan,
-      expires_at=excluded.expires_at,
-      max_devices=excluded.max_devices,
-      active=excluded.active
-  `).run({ key, plan, expires_at, max_devices, active });
-  return getLicenseByKey(key);
+/* ========== LICENSES / HISTORY ========== */
+// licenses[key] = { key, plan, expires_at (ISO|null), max_devices, active(0/1), uid (bound or null), updated_at }
+// license_history: push { ts, key, action('create'|'bind'|'transfer'|'activate'|'deactivate'|'renew'), from_uid, to_uid }
+
+function touchLicense(key, patch = {}) {
+  const exist = DB.licenses[key] || { key, plan:'pro', expires_at:null, max_devices:1, active:1, uid:null, updated_at: now() };
+  const row = { ...exist, ...patch, key, updated_at: now() };
+  DB.licenses[key] = row;
+  save(DB);
+  return row;
 }
-function setLicenseTargetUid(key, uid){
-  db.prepare(`UPDATE licenses SET uid=? WHERE key=?`).run(uid, key);
-  db.prepare(`INSERT INTO license_history (key, action, to_uid) VALUES (?, 'activate', ?)`).run(key, uid);
-  return getLicenseByKey(key);
-}
-function transferLicense(key, fromUid, toUid){
-  const row = getLicenseByKey(key);
-  if (!row) return null;
-  if (row.uid && row.uid !== fromUid) return 'bound-to-other';
-  db.prepare(`UPDATE licenses SET uid=? WHERE key=?`).run(toUid, key);
-  db.prepare(`INSERT INTO license_history (key, action, from_uid, to_uid) VALUES (?, 'transfer', ?, ?)`)
-    .run(key, fromUid || null, toUid || null);
-  return getLicenseByKey(key);
-}
-function deactivateLicense(key){
-  db.prepare(`UPDATE licenses SET active=0 WHERE key=?`).run(key);
-  db.prepare(`INSERT INTO license_history (key, action) VALUES (?, 'deactivate')`).run(key);
-  return getLicenseByKey(key);
-}
-function activateLicense(key){
-  db.prepare(`UPDATE licenses SET active=1 WHERE key=?`).run(key);
-  db.prepare(`INSERT INTO license_history (key, action) VALUES (?, 'activate')`).run(key);
-  return getLicenseByKey(key);
-}
-function renewLicense(key, expires_at){
-  db.prepare(`UPDATE licenses SET expires_at=? WHERE key=?`).run(expires_at, key);
-  db.prepare(`INSERT INTO license_history (key, action) VALUES (?, 'renew')`).run(key);
-  return getLicenseByKey(key);
-}
-function listLicenses(){ return db.prepare(`SELECT * FROM licenses ORDER BY created_at DESC`).all(); }
-function listLicenseHistory(key, limit=100){
-  return db.prepare(`SELECT * FROM license_history WHERE key=? ORDER BY id DESC LIMIT ?`).all(key, limit);
-}
-function checkLicense(uid){
-  const row = getLicenseByUid(uid);
-  if (!row) return { ok:false, status:'not_found' };
-  if (!row.active) return { ok:false, status:'inactive' };
-  if (row.expires_at && Date.now() > row.expires_at){
-    return { ok:false, status:'expired', plan: row.plan, expires_at: row.expires_at };
-  }
-  return { ok:true, status:'valid', plan: row.plan, key: row.key, expires_at: row.expires_at || null };
+function history(key, action, from_uid=null, to_uid=null) {
+  DB.license_history.push({ ts: now(), key, action, from_uid, to_uid });
+  if (DB.license_history.length > 20000) DB.license_history = DB.license_history.slice(-20000);
+  save(DB);
 }
 
-// ---------- EXPORT ----------
+function upsertLicense({ key, plan='pro', expires_at=null, max_devices=1, active=1 }) {
+  const created = !DB.licenses[key];
+  const row = touchLicense(key, { plan, expires_at, max_devices:Number(max_devices||1), active:Number(active?1:0) });
+  if (created) history(key, 'create', null, null);
+  return row;
+}
+function getLicenseByKey(key) {
+  return DB.licenses[key] || null;
+}
+function setLicenseTargetUid(key, uid) {
+  const lic = DB.licenses[key];
+  if (!lic) return null;
+  const prev = lic.uid || null;
+  const row = touchLicense(key, { uid: uid || null });
+  history(key, prev ? 'transfer' : 'bind', prev, uid || null);
+  return row;
+}
+function transferLicense(key, fromUid, toUid) {
+  const lic = DB.licenses[key];
+  if (!lic) return null;
+  if (fromUid && lic.uid && lic.uid !== fromUid) return 'bound-to-other';
+  const prev = lic.uid || null;
+  const row = touchLicense(key, { uid: toUid || null });
+  history(key, 'transfer', prev, toUid || null);
+  return row;
+}
+function getLicenseByUid(uid) {
+  if (!uid) return null;
+  const items = Object.values(DB.licenses);
+  return items.find(r => r.uid === uid && Number(r.active) === 1) || null;
+}
+function checkLicense(uid) {
+  const lic = getLicenseByUid(uid);
+  if (!lic) return { ok:false, error:'not bound', plan:null, expires_at:null };
+  if (Number(lic.active) !== 1) return { ok:false, error:'inactive', plan:lic.plan, expires_at:lic.expires_at };
+  if (lic.expires_at) {
+    const expMs = Date.parse(lic.expires_at);
+    if (isFinite(expMs) && Date.now() > expMs) {
+      return { ok:false, error:'expired', plan: lic.plan, expires_at: lic.expires_at };
+    }
+  }
+  return { ok:true, plan: lic.plan, expires_at: lic.expires_at || null };
+}
+function listLicenses() {
+  return Object.values(DB.licenses).map(r => ({ ...r }));
+}
+function listLicenseHistory(key, limit = 100) {
+  const rows = DB.license_history.filter(h => h.key === key).slice(-limit);
+  return rows.reverse();
+}
+
 module.exports = {
-  // challenges
-  getTarget, saveObservation, recomputeTarget,
-  listChallenges, getChallenge, listObservations,
-  setTarget, deleteKey, compactKey,
-  // licenses
-  getLicenseByKey, getLicenseByUid, upsertLicense, setLicenseTargetUid,
-  transferLicense, deactivateLicense, activateLicense, renewLicense,
-  listLicenses, listLicenseHistory, checkLicense
+  getTarget, setTarget, saveObservation, listObservations, recomputeTarget,
+  listChallenges, getChallenge, deleteKey, compactKey,
+  upsertLicense, getLicenseByKey, setLicenseTargetUid, transferLicense,
+  getLicenseByUid, checkLicense, listLicenses, listLicenseHistory
 };
