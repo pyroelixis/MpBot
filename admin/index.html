@@ -7,48 +7,43 @@
 <style>
   :root{
     --bg:#0b0b12; --card:#141427; --line:#2a2a44; --text:#eaeaf1; --muted:#9fb3c8;
-    --input:#16162a; --btn:#5865f2; --btn-danger:#8b1e1e; --ok:#1e8b4a;
+    --input:#16162a; --btn:#5865f2; --btn-danger:#8b1e1e; --ok:#2e7d32;
   }
   *{box-sizing:border-box}
   body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:20px;background:var(--bg);color:var(--text)}
   h1,h2{margin:.2rem 0 .8rem}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;background:var(--card)}
-  input,button,select{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--input);color:var(--text)}
+  input,button{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--input);color:var(--text)}
   input{min-width:220px}
   button{cursor:pointer;background:var(--btn);border-color:var(--btn)}
   button.secondary{background:transparent}
   button.danger{background:var(--btn-danger);border-color:var(--btn-danger)}
-  button.ok{background:var(--ok);border-color:var(--ok)}
-  label{opacity:.85}
   table{width:100%;border-collapse:collapse;margin-top:8px}
-  th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;font-size:14px}
+  th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;font-size:14px;vertical-align:top}
   pre{white-space:pre-wrap;background:#0e0e18;border:1px solid var(--line);border-radius:8px;padding:8px}
   .muted{color:var(--muted);font-size:13px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-  @media (max-width:1100px){ .grid-3{grid-template-columns:1fr} }
   @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+  .ok{color:#d0ffd5}
 </style>
 </head>
 <body>
 <h1>MpBot Admin</h1>
-<div class="muted">จัดการ Target (theta/phi/tolerance) / ดู Observations และ License keys</div>
+<div class="muted">จัดการ Target / Observations และ License (bind, expire, transfer) ที่นี่</div>
 
-<!-- Token & quick actions -->
 <div class="card">
   <div class="row">
     <label for="token">Admin Token:</label>
     <input id="token" placeholder="X-Admin-Token (ถ้าตั้ง ADMIN_TOKEN ไว้)" />
     <button class="secondary" id="btnSaveTok">Save token</button>
     <button id="btnLoadChallenges">Load Challenges</button>
-    <button class="secondary" id="btnLoadLic">Load Licenses</button>
+    <button id="btnLoadLicenses">Load Licenses</button>
   </div>
   <div class="muted" id="msg"></div>
 </div>
 
 <div class="grid">
-  <!-- Target editor -->
   <div class="card">
     <h2>Target Editor</h2>
     <div class="row">
@@ -58,9 +53,9 @@
       <button class="secondary" id="btnObs">Observations</button>
     </div>
     <div class="row" style="margin-top:8px">
-      <input id="theta" type="number" placeholder="thetaDeg (เช่น 0)"/>
-      <input id="phi" type="number" placeholder="phiDeg (เช่น 90)" value="90"/>
-      <input id="tol" type="number" placeholder="tolerance (เช่น 10)" value="10"/>
+      <input id="theta" type="number" placeholder="thetaDeg" />
+      <input id="phi" type="number" placeholder="phiDeg" value="90"/>
+      <input id="tol" type="number" placeholder="tolerance" value="10"/>
     </div>
     <div class="row" style="margin-top:8px">
       <button id="btnSet">Set Target</button>
@@ -69,115 +64,78 @@
     </div>
   </div>
 
-  <!-- Result / logs -->
   <div class="card">
     <h2>Result</h2>
     <pre id="out">Ready.</pre>
   </div>
 </div>
 
-<!-- Tables -->
 <div class="grid">
   <div class="card">
-    <div class="row">
-      <h2 style="margin-right:auto">Challenges</h2>
+    <div class="row"><h2 style="margin-right:auto">Challenges</h2>
       <button class="secondary" id="btnReloadChallenges">Reload</button>
     </div>
     <table id="tblChallenges">
-      <thead>
-        <tr><th>Key</th><th>θ</th><th>φ</th><th>Tol</th><th>Updated</th></tr>
-      </thead>
+      <thead><tr><th>Key</th><th>θ</th><th>φ</th><th>Tol</th><th>Updated</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
 
   <div class="card">
-    <div class="row">
-      <h2 style="margin-right:auto">Observations (latest)</h2>
-      <button class="secondary" id="btnReloadObs">Reload</button>
-    </div>
+    <div class="row"><h2 style="margin-right:auto">Observations (latest)</h2>
+      <button class="secondary" id="btnReloadObs">Reload</button></div>
     <table id="tblObs">
-      <thead>
-        <tr><th>#</th><th>θ</th><th>φ</th><th>ts</th></tr>
-      </thead>
+      <thead><tr><th>#</th><th>θ</th><th>φ</th><th>ts</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
 </div>
 
-<!-- LICENSE ADMIN -->
 <div class="card">
   <h2>License Admin</h2>
+  <div class="row">
+    <input id="lic_key" placeholder="license key">
+    <input id="lic_plan" placeholder="plan (pro/basic)" value="pro">
+    <input id="lic_exp" placeholder="expiresAt (ISO or empty)">
+    <input id="lic_max" placeholder="max_devices" value="1" type="number" min="1">
+    <label><input id="lic_active" type="checkbox" checked> active</label>
+    <button id="btnUpsertLic">Upsert</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="bind_uid" placeholder="bind to UID">
+    <button id="btnBind">Bind</button>
+    <input id="check_uid" placeholder="check UID">
+    <button id="btnCheckUID">Check</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="from_uid" placeholder="from UID (optional)">
+    <input id="to_uid" placeholder="to UID">
+    <input id="xfer_key" placeholder="license key">
+    <button id="btnTransfer">Transfer</button>
+  </div>
+</div>
 
-  <div class="grid-3">
-    <!-- Upsert license -->
-    <div class="card">
-      <h3 style="margin-top:0;">Create / Update License</h3>
-      <div class="row"><input id="lic_key" placeholder="license key (required)"></div>
-      <div class="row" style="margin-top:6px">
-        <select id="lic_plan">
-          <option value="pro">pro</option>
-          <option value="basic">basic</option>
-        </select>
-        <input id="lic_exp" placeholder="expires_at (ISO หรือเว้นว่าง)">
-        <input id="lic_max" type="number" value="1" min="1" step="1" placeholder="max_devices">
-        <select id="lic_active">
-          <option value="1" selected>active</option>
-          <option value="0">inactive</option>
-        </select>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <button id="btnUpsertLic">Upsert</button>
-      </div>
+<div class="grid">
+  <div class="card">
+    <div class="row"><h2 style="margin-right:auto">Licenses</h2>
+      <button class="secondary" id="btnReloadLic">Reload</button>
     </div>
-
-    <!-- Bind/check/transfer (public APIs) -->
-    <div class="card">
-      <h3 style="margin-top:0;">Bind / Check / Transfer</h3>
-      <div class="row">
-        <input id="uid_bind" placeholder="uid">
-        <input id="key_bind" placeholder="license key">
-        <button class="ok" id="btnBind">Bind (/api/key)</button>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <input id="uid_check" placeholder="uid to check">
-        <button class="secondary" id="btnCheck">Check (/api/check/:uid)</button>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <input id="uid_from" placeholder="fromUid">
-        <input id="uid_to" placeholder="toUid">
-        <input id="key_transfer" placeholder="license key">
-        <button id="btnTransfer">Transfer (/api/tranfer)</button>
-      </div>
-    </div>
-
-    <!-- History -->
-    <div class="card">
-      <h3 style="margin-top:0;">License History</h3>
-      <div class="row">
-        <input id="lic_hist_key" placeholder="license key">
-        <button class="secondary" id="btnLoadHist">Load History</button>
-      </div>
-      <table id="tblLicHist" style="margin-top:8px">
-        <thead><tr><th>ts</th><th>action</th><th>uid</th><th>meta</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
+    <table id="tblLicenses">
+      <thead><tr><th>Key</th><th>Plan</th><th>UID</th><th>Active</th><th>Expires</th><th>Updated</th></tr></thead>
+      <tbody></tbody>
+    </table>
   </div>
 
-  <!-- Licenses table -->
-  <div class="row" style="margin-top:10px">
-    <h3 style="margin-right:auto;margin-top:0;">Licenses</h3>
-    <button class="secondary" id="btnReloadLic">Reload</button>
+  <div class="card">
+    <div class="row"><h2 style="margin-right:auto">License History</h2>
+      <input id="hist_key" placeholder="license key">
+      <button class="secondary" id="btnLoadHist">Load</button>
+    </div>
+    <table id="tblLicHist">
+      <thead><tr><th>ts</th><th>action</th><th>uid</th><th>info</th></tr></thead>
+      <tbody></tbody>
+    </table>
   </div>
-  <table id="tblLic">
-    <thead>
-      <tr>
-        <th>key</th><th>plan</th><th>uid</th><th>max_dev</th><th>active</th><th>expires</th><th>updated</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
 </div>
 
 <script>
@@ -192,207 +150,137 @@ function headers(){
   if (t) h['X-Admin-Token'] = t;
   return h;
 }
-function saveToken(){
-  localStorage.setItem('mpbot_admin_token', el('token').value.trim());
-  info('Saved token to localStorage');
-}
-function loadToken(){
-  const t = localStorage.getItem('mpbot_admin_token') || '';
-  el('token').value = t;
-}
+function saveToken(){ localStorage.setItem('mpbot_admin_token', el('token').value.trim()); info('saved'); }
+function loadToken(){ el('token').value = localStorage.getItem('mpbot_admin_token') || ''; }
 
-/* ---------------- Challenges (เดิม) ---------------- */
 async function loadChallenges(){
   const r = await fetch(`${API}/api/admin/challenges`, { headers: headers() });
-  const j = await r.json().catch(()=>({ok:false,error:'parse error'}));
-  if(!j.ok){ out(j); return; }
-  renderChallenges(j.rows || []); out(j);
+  const j = await r.json(); if (!j.ok) return out(j);
+  renderChallenges(j.rows||[]); out(j);
 }
 function renderChallenges(rows){
-  const tb = el('tblChallenges').querySelector('tbody'); tb.innerHTML = '';
+  const tb = el('tblChallenges').querySelector('tbody'); tb.innerHTML='';
   rows.forEach(row=>{
-    const tr = document.createElement('tr');
-    const ts = row.updated_at ? new Date(row.updated_at).toLocaleString() : '';
-    tr.innerHTML = `<td>${row.key}</td>
-      <td>${row.thetaDeg}</td><td>${row.phiDeg}</td>
-      <td>${row.tolerance}</td><td>${ts}</td>`;
+    const tr=document.createElement('tr');
+    const ts=row.updated_at? new Date(row.updated_at).toLocaleString() : '';
+    tr.innerHTML = `<td>${row.key}</td><td>${row.thetaDeg}</td><td>${row.phiDeg}</td><td>${row.tolerance}</td><td>${ts}</td>`;
     tr.style.cursor='pointer';
-    tr.onclick = ()=>{
-      el('key').value = row.key;
-      el('theta').value = row.thetaDeg;
-      el('phi').value   = row.phiDeg;
-      el('tol').value   = row.tolerance ?? 10;
-    };
-    tb.appendChild(tr);
-  });
-}
-async function loadObs(){
-  const key = el('key').value.trim(); if(!key){ out('Please enter key'); return; }
-  const r = await fetch(`${API}/api/admin/observations/${encodeURIComponent(key)}?limit=200`, { headers: headers() });
-  const j = await r.json().catch(()=>({ok:false,error:'parse error'}));
-  if(!j.ok){ out(j); return; }
-  renderObs(j.rows || []); out(j);
-}
-function renderObs(rows){
-  const tb = el('tblObs').querySelector('tbody'); tb.innerHTML = '';
-  rows.forEach((row,i)=>{
-    const ts = row.ts ? new Date(row.ts).toLocaleString() : '';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i+1}</td><td>${row.thetaDeg}</td><td>${row.phiDeg}</td><td>${ts}</td>`;
+    tr.onclick=()=>{ el('key').value=row.key; el('theta').value=row.thetaDeg; el('phi').value=row.phiDeg; el('tol').value=row.tolerance ?? 10; };
     tb.appendChild(tr);
   });
 }
 async function viewKey(){
-  const key = el('key').value.trim(); if(!key){ out('Please enter key'); return; }
-  const r = await fetch(`${API}/api/admin/challenges/${encodeURIComponent(key)}`, { headers: headers() });
-  out(await r.json());
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/challenges/${encodeURIComponent(key)}`,{headers:headers()})).json();
+  out(j);
 }
 async function prefill(){
-  const key = el('key').value.trim(); if(!key){ out('Please enter key'); return; }
-  const r = await fetch(`${API}/api/admin/challenges/${encodeURIComponent(key)}`, { headers: headers() });
-  const j = await r.json();
-  if(j.ok && j.row){
-    el('theta').value = j.row.thetaDeg ?? '';
-    el('phi').value   = j.row.phiDeg ?? '';
-    el('tol').value   = j.row.tolerance ?? 10;
-    out(j);
-  }else out(j);
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/challenges/${encodeURIComponent(key)}`,{headers:headers()})).json();
+  if(j.ok && j.row){ el('theta').value=j.row.thetaDeg??''; el('phi').value=j.row.phiDeg??''; el('tol').value=j.row.tolerance??10; }
+  out(j);
 }
 async function setTarget(){
-  const key = el('key').value.trim();
-  const theta = Number(el('theta').value);
-  const phi   = Number(el('phi').value);
-  const tol   = Number(el('tol').value);
-  if(!key || Number.isNaN(theta) || Number.isNaN(phi)){ out('key/theta/phi required'); return; }
-  const r = await fetch(`${API}/api/admin/set-target`, {
-    method:'POST', headers: headers(),
-    body: JSON.stringify({ key, thetaDeg:theta, phiDeg:phi, tolerance: tol })
-  });
-  const j = await r.json(); out(j);
-  if(j.ok) loadChallenges();
+  const key=el('key').value.trim(); const theta=Number(el('theta').value); const phi=Number(el('phi').value); const tol=Number(el('tol').value);
+  if(!key||Number.isNaN(theta)||Number.isNaN(phi)) return out('key/theta/phi required');
+  const j=await (await fetch(`${API}/api/admin/set-target`,{method:'POST',headers:headers(),body:JSON.stringify({key,thetaDeg:theta,phiDeg:phi,tolerance:tol})})).json();
+  out(j); if(j.ok) loadChallenges();
 }
 async function compact(){
-  const key = el('key').value.trim(); if(!key){ out('Please enter key'); return; }
-  const r = await fetch(`${API}/api/admin/compact/${encodeURIComponent(key)}`, {
-    method:'POST', headers: headers(), body: JSON.stringify({ keep:200 })
-  });
-  const j = await r.json(); out(j);
-  if(j.ok) { loadChallenges(); loadObs(); }
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/compact/${encodeURIComponent(key)}`,{method:'POST',headers:headers(),body:JSON.stringify({keep:200})})).json();
+  out(j);
 }
 async function delKey(){
-  const key = el('key').value.trim(); if(!key){ out('Please enter key'); return; }
-  if(!confirm(`Delete all data for "${key}" ?`)) return;
-  const r = await fetch(`${API}/api/admin/keys/${encodeURIComponent(key)}`, {
-    method:'DELETE', headers: headers()
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  if(!confirm(`Delete "${key}" ?`)) return;
+  const j=await (await fetch(`${API}/api/admin/keys/${encodeURIComponent(key)}`,{method:'DELETE',headers:headers()})).json();
+  out(j); if(j.ok) loadChallenges();
+}
+async function loadObs(){
+  const key=el('key').value.trim(); if(!key) return out('enter key');
+  const j=await (await fetch(`${API}/api/admin/observations/${encodeURIComponent(key)}?limit=200`,{headers:headers()})).json();
+  renderObs(j.rows||[]); out(j);
+}
+function renderObs(rows){
+  const tb=el('tblObs').querySelector('tbody'); tb.innerHTML='';
+  rows.forEach((r,i)=>{
+    const ts=r.ts? new Date(r.ts).toLocaleString(): '';
+    const tr=document.createElement('tr'); tr.innerHTML=`<td>${i+1}</td><td>${r.thetaDeg}</td><td>${r.phiDeg}</td><td>${ts}</td>`;
+    tb.appendChild(tr);
   });
-  const j = await r.json(); out(j);
-  if(j.ok){ loadChallenges(); el('tblObs').querySelector('tbody').innerHTML=''; }
 }
 
-/* ---------------- Licenses ---------------- */
 async function loadLicenses(){
-  const r = await fetch(`${API}/api/admin/licenses`, { headers: headers() });
-  const j = await r.json().catch(()=>({ok:false,error:'parse error'}));
-  if(!j.ok){ out(j); return; }
-  renderLicenses(j.rows || []); out(j);
+  const j=await (await fetch(`${API}/api/admin/licenses`,{headers:headers()})).json();
+  if(!j.ok) return out(j);
+  renderLicenses(j.rows||[]); out(j);
 }
 function renderLicenses(rows){
-  const tb = el('tblLic').querySelector('tbody'); tb.innerHTML = '';
-  rows.forEach(row=>{
-    const tr = document.createElement('tr');
-    const updated = row.updated_at ? new Date(row.updated_at).toLocaleString() : '';
-    tr.innerHTML = `<td>${row.key}</td>
-      <td>${row.plan||''}</td>
-      <td>${row.uid||''}</td>
-      <td>${row.max_devices??''}</td>
-      <td>${row.active? 'yes':'no'}</td>
-      <td>${row.expires_at||''}</td>
-      <td>${updated}</td>`;
+  const tb=el('tblLicenses').querySelector('tbody'); tb.innerHTML='';
+  rows.forEach(r=>{
+    const ts=r.updated_at? new Date(r.updated_at).toLocaleString(): '';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.key}</td><td>${r.plan||''}</td><td>${r.uid||''}</td><td>${Number(r.active)?'YES':'NO'}</td><td>${r.expires_at||''}</td><td>${ts}</td>`;
     tb.appendChild(tr);
   });
 }
-async function upsertLicense(){
-  const key = el('lic_key').value.trim();
-  if(!key){ out('license key required'); return; }
-  const body = {
-    key,
-    plan: el('lic_plan').value,
-    expires_at: el('lic_exp').value.trim() || null,
-    max_devices: Number(el('lic_max').value||1),
-    active: Number(el('lic_active').value||1)
-  };
-  const r = await fetch(`${API}/api/admin/licenses`, {
-    method:'POST', headers: headers(), body: JSON.stringify(body)
-  });
-  const j = await r.json(); out(j);
-  if(j.ok) loadLicenses();
+async function upsertLic(){
+  const key=el('lic_key').value.trim(); if(!key) return out('license key required');
+  const plan=el('lic_plan').value.trim()||'pro';
+  const expiresAt=el('lic_exp').value.trim()||null;
+  const max=Number(el('lic_max').value||1);
+  const active=el('lic_active').checked?1:0;
+  const j=await (await fetch(`${API}/api/admin/licenses`,{method:'POST',headers:headers(),body:JSON.stringify({key,plan,expiresAt,max_devices:max,active})})).json();
+  out(j); if(j.ok) loadLicenses();
 }
-async function bindLicense(){
-  const uid = el('uid_bind').value.trim();
-  const key = el('key_bind').value.trim();
-  if(!key){ out('key required'); return; }
-  const r = await fetch(`${API}/api/key`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, key })
-  });
-  out(await r.json());
+async function bindLic(){
+  const key=el('lic_key').value.trim(); const uid=el('bind_uid').value.trim();
+  if(!key||!uid) return out('key & uid required');
+  const j=await (await fetch(`${API}/api/key`,{method:'POST',headers:headers(),body:JSON.stringify({key,uid})})).json();
+  out(j); if(j.ok) loadLicenses();
 }
-async function checkUid(){
-  const uid = el('uid_check').value.trim(); if(!uid){ out('uid required'); return; }
-  const r = await fetch(`${API}/api/check/${encodeURIComponent(uid)}`);
-  out(await r.json());
+async function checkUID(){
+  const uid=el('check_uid').value.trim(); if(!uid) return out('uid required');
+  const j=await (await fetch(`${API}/api/check/${encodeURIComponent(uid)}`,{headers:headers()})).json();
+  out(j);
 }
-async function transfer(){
-  const fromUid = el('uid_from').value.trim();
-  const toUid   = el('uid_to').value.trim();
-  const key     = el('key_transfer').value.trim();
-  if(!toUid || !key){ out('toUid & key required'); return; }
-  const url = new URL(`${API}/api/tranfer/${encodeURIComponent(fromUid||'')}`);
-  url.searchParams.set('tranferTo', toUid);
-  url.searchParams.set('key', key);
-  const r = await fetch(url);
-  out(await r.json());
+async function transferLic(){
+  const key=el('xfer_key').value.trim(); const toUid=el('to_uid').value.trim(); const fromUid=el('from_uid').value.trim();
+  if(!key||!toUid) return out('key & toUid required');
+  const q = new URLSearchParams({ tranferTo: toUid, key }).toString();
+  const j=await (await fetch(`${API}/api/tranfer/${encodeURIComponent(fromUid||'') || '-' }?${q}`,{headers:headers()})).json();
+  out(j); if(j.ok) loadLicenses();
 }
-async function loadHistory(){
-  const key = el('lic_hist_key').value.trim(); if(!key){ out('license key required'); return; }
-  const r = await fetch(`${API}/api/admin/licenses/${encodeURIComponent(key)}/history?limit=100`, { headers: headers() });
-  const j = await r.json(); out(j);
-  renderHist(j.rows || []);
+async function loadHist(){
+  const key=el('hist_key').value.trim(); if(!key) return out('license key required');
+  const j=await (await fetch(`${API}/api/admin/licenses/${encodeURIComponent(key)}/history?limit=200`,{headers:headers()})).json();
+  renderHist(j.rows||[]); out(j);
 }
 function renderHist(rows){
-  const tb = el('tblLicHist').querySelector('tbody'); tb.innerHTML='';
+  const tb=el('tblLicHist').querySelector('tbody'); tb.innerHTML='';
   rows.forEach(h=>{
-    const tr = document.createElement('tr');
-    const ts = h.ts ? new Date(h.ts).toLocaleString() : '';
-    tr.innerHTML = `<td>${ts}</td><td>${h.action||''}</td><td>${h.uid||''}</td><td>${h.meta||''}</td>`;
+    const ts=h.ts? new Date(h.ts).toLocaleString(): '';
+    const who=(h.from_uid||'') + (h.to_uid? (' → '+h.to_uid):'');
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${ts}</td><td>${h.action||''}</td><td>${who||''}</td><td>${h.key||''}</td>`;
     tb.appendChild(tr);
   });
 }
 
-/* ---------------- Wire & init ---------------- */
-el('btnSaveTok').onclick = saveToken;
-el('btnLoadChallenges').onclick = loadChallenges;
-el('btnReloadChallenges').onclick = loadChallenges;
-el('btnReloadObs').onclick = loadObs;
+el('btnSaveTok').onclick=saveToken; loadToken();
+el('btnLoadChallenges').onclick=loadChallenges;
+el('btnReloadChallenges').onclick=loadChallenges;
+el('btnView').onclick=viewKey; el('btnPrefill').onclick=prefill;
+el('btnSet').onclick=setTarget; el('btnCompact').onclick=compact; el('btnDelete').onclick=delKey;
+el('btnObs').onclick=loadObs; el('btnReloadObs').onclick=loadObs;
 
-el('btnView').onclick = viewKey;
-el('btnPrefill').onclick = prefill;
-el('btnObs').onclick = loadObs;
-el('btnSet').onclick = setTarget;
-el('btnCompact').onclick = compact;
-el('btnDelete').onclick = delKey;
+el('btnLoadLicenses').onclick=loadLicenses; el('btnReloadLic').onclick=loadLicenses;
+el('btnUpsertLic').onclick=upsertLic; el('btnBind').onclick=bindLic;
+el('btnCheckUID').onclick=checkUID; el('btnTransfer').onclick=transferLic;
+el('btnLoadHist').onclick=loadHist;
 
-el('btnLoadLic').onclick = loadLicenses;
-el('btnReloadLic').onclick = loadLicenses;
-el('btnUpsertLic').onclick = upsertLicense;
-el('btnBind').onclick = bindLicense;
-el('btnCheck').onclick = checkUid;
-el('btnTransfer').onclick = transfer;
-el('btnLoadHist').onclick = loadHistory;
-
-loadToken();
-loadChallenges();
-loadLicenses();
+loadChallenges(); loadLicenses();
 </script>
 </body>
 </html>
